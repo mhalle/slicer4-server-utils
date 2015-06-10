@@ -9,7 +9,7 @@ def absPath(*args):
 sys.path.append(absPath('modules'))
 
 import re
-from uasparser2 import UASParser
+import user_agents
 import apachelog
 import pygeoip
 
@@ -207,7 +207,6 @@ def addGeoIPInfo(db):
     return
 
 def addUserAgentInfo(db):
-    uas_parser = UASParser('/tmp', mem_cache_size=1000, cache_ttl=3600*24*7)
     uaCompleted = set()
     for ua in list(db.execute("""select useragent from access
                             except
@@ -215,13 +214,23 @@ def addUserAgentInfo(db):
         userAgent = ua[0]
         if userAgent in uaCompleted:
             continue
-        uaRec = uas_parser.parse(userAgent)
+        uaRec = user_agents.parse(userAgent)
         if not uaRec:
             continue
+
+        if uaRec.is_pc:
+            browserType = 'Browser'
+        elif uaRec.is_mobile:
+            browserType = 'Mobile Browser'
+        elif uaRec.is_bot:
+            browserType = 'Robot'
+        else:
+            browserType = 'unknown'
+
         db.execute("""insert or replace into uainfo(useragent,
                     browser_type, ua_name, os_name, os_family) values(?, ?, ?, ?, ?)""",
-                    (userAgent, uaRec['typ'], uaRec['ua_name'],
-                     uaRec['os_name'], uaRec['os_family']))
+                    (userAgent, browserType, uaRec.browser.family,
+                     '%s %s' % (uaRec.os.family, uaRec.os.version_string), uaRec.os.family))
         uaCompleted.add(userAgent)
         db.commit() # commit per record in case we exit
     return
